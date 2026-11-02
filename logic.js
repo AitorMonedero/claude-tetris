@@ -132,3 +132,45 @@ function pickPieceType(level, random = Math.random) {
   if (roll < HOLLOW_CHANCE + PENTOMINO_CHANCE) return pickFrom(PENTOMINO_TYPES, random);
   return pickFrom(STANDARD_TYPES, random);
 }
+
+// ---- Combos and bonuses ----
+
+const T_TYPE = 3;
+const TSPIN_SCORES = [400, 800, 1200, 1600];
+const COMBO_MAX_MULTIPLIER = 10;
+const B2B_MULTIPLIER = 1.5;
+const PERFECT_CLEAR_BONUS = 2000;
+
+// T-spin (3-corner rule): at least 3 of the 4 corners of the T's 3x3 box are walls, floor or blocks.
+function isTSpin(board, piece) {
+  if (piece.type !== T_TYPE) return false;
+  const corners = [[0, 0], [2, 0], [0, 2], [2, 2]];
+  const blocked = corners.filter(([dx, dy]) => {
+    const x = piece.x + dx, y = piece.y + dy;
+    if (x < 0 || x >= COLS || y >= ROWS) return true;
+    return y >= 0 && board[y][x] !== 0;
+  });
+  return blocked.length >= 3;
+}
+
+// Tetrises and T-spins that clear lines keep the back-to-back chain alive.
+function isDifficultClear(cleared, tspin) {
+  return cleared === 4 || (tspin && cleared > 0);
+}
+
+function isBoardEmpty(board) {
+  return board.every(row => row.every(v => v === 0));
+}
+
+function comboMultiplier(combo) {
+  return Math.min(Math.max(combo, 1), COMBO_MAX_MULTIPLIER);
+}
+
+// combo: consecutive line-clearing locks including this one (1 = first clear, no multiplier).
+function computeClearScore({ cleared, level, combo = 1, tspin = false, b2b = false, perfect = false, wildCount = 0 }) {
+  let base = (tspin ? TSPIN_SCORES[cleared] : LINE_SCORES[cleared] || 0) * level;
+  if (b2b) base *= B2B_MULTIPLIER;
+  const comboPoints = cleared > 0 ? base * comboMultiplier(combo) : base;
+  const bonus = wildCount * WILD_BONUS * level + (perfect ? PERFECT_CLEAR_BONUS * level : 0);
+  return Math.round(comboPoints + bonus);
+}

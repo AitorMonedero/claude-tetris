@@ -70,6 +70,10 @@ body {
   letter-spacing: 1px;
 }
 
+.combo {
+  color: #ffd740;
+}
+
 .effect {
   font-size: 13px;
   font-weight: 700;

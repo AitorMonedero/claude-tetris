@@ -52,6 +52,8 @@ const scoreEl = document.getElementById('score');
 const linesEl = document.getElementById('lines');
 const levelEl = document.getElementById('level');
 const effectEl = document.getElementById('effect');
+const comboEl = document.getElementById('combo');
+const soundEl = document.getElementById('sound');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
@@ -59,6 +61,11 @@ const restartBtn = document.getElementById('restart-btn');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let nextPowerupAtLines, pendingPowerup, freezeRemaining, pendingReward;
+let combo, b2bActive, lastActionWasRotate, popups, flashRemaining;
+
+const POPUP_MS = 1200;
+const FLASH_MS = 250;
+const TSPIN_NAMES = ['T-SPIN', 'T-SPIN SINGLE', 'T-SPIN DOUBLE', 'T-SPIN TRIPLE'];
 
 function pieceAtSpawn(type, shape) {
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
@@ -91,6 +98,7 @@ function tryRotate() {
     if (!collide(board, rotated, current.x + kick, current.y)) {
       current.shape = rotated;
       current.x += kick;
+      lastActionWasRotate = true;
       return;
     }
   }
@@ -103,21 +111,33 @@ function merge() {
         board[current.y + r][current.x + c] = current.shape[r][c];
 }
 
-function clearLines() {
-  const wildCleared = countWildInFullRows(board);
+function clearLines(tspin = false) {
+  const wildCount = countWildInFullRows(board);
   const cleared = clearFullRows(board);
-  if (cleared) {
-    lines += cleared;
-    score += lineClearScore(cleared, level) + wildCleared * WILD_BONUS * level;
-    level = levelForLines(lines);
-    dropInterval = dropIntervalForLevel(level);
-    if (cleared === 4) pendingReward = true;
-    if (lines >= nextPowerupAtLines) {
-      pendingPowerup = true;
-      nextPowerupAtLines += POWERUP_EVERY_LINES;
+  if (!cleared) {
+    combo = 0;
+    if (tspin) {
+      score += computeClearScore({ cleared, level, tspin });
+      announce([TSPIN_NAMES[0]], 0);
     }
-    updateHUD();
+    return;
   }
+  combo++;
+  const difficult = isDifficultClear(cleared, tspin);
+  const b2b = difficult && b2bActive;
+  const perfect = isBoardEmpty(board);
+  b2bActive = difficult;
+  score += computeClearScore({ cleared, level, combo, tspin, b2b, perfect, wildCount });
+  announceClear({ cleared, tspin, b2b, perfect });
+  lines += cleared;
+  level = levelForLines(lines);
+  dropInterval = dropIntervalForLevel(level);
+  if (cleared === 4) pendingReward = true;
+  if (lines >= nextPowerupAtLines) {
+    pendingPowerup = true;
+    nextPowerupAtLines += POWERUP_EVERY_LINES;
+  }
+  updateHUD();
 }
 
 function applyPowerup(piece) {
@@ -131,6 +151,55 @@ function applyPowerup(piece) {
   }
 }
 
+function announceClear({ cleared, tspin, b2b, perfect }) {
+  const texts = [];
+  if (tspin) texts.push(TSPIN_NAMES[cleared]);
+  else if (cleared === 4) texts.push('TETRIS');
+  if (b2b) texts.push('B2B');
+  if (combo >= 2) texts.push(`COMBO x${comboMultiplier(combo)}`);
+  if (perfect) texts.push('PERFECT CLEAR');
+  if (texts.length) announce(texts, combo);
+  else playTone(440, 0.08);
+}
+
+function announce(texts, intensity) {
+  texts.forEach((text, i) => popups.push({ text, remaining: POPUP_MS, row: popups.length + i }));
+  flashRemaining = FLASH_MS;
+  // Each chained step raises the pitch two semitones.
+  const baseFreq = 440 * Math.pow(2, (2 * intensity) / 12);
+  texts.forEach((_, i) => playTone(baseFreq * Math.pow(2, (4 * i) / 12), 0.12, i * 0.09));
+}
+
+let audioCtx = null;
+let soundEnabled = true;
+
+function playTone(freq, duration, delay = 0) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!soundEnabled || !AudioContextClass) return;
+  audioCtx = audioCtx || new AudioContextClass();
+  const start = audioCtx.currentTime + delay;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.06, start);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(start);
+  osc.stop(start + duration);
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  soundEl.textContent = soundEnabled ? 'sonido ON' : 'sonido OFF';
+}
+
+function moveHorizontal(dx) {
+  if (collide(board, current.shape, current.x + dx, current.y)) return;
+  current.x += dx;
+  lastActionWasRotate = false;
+}
+
 function ghostY() {
   let gy = current.y;
   while (!collide(board, current.shape, current.x, gy + 1)) gy++;
@@ -140,6 +209,7 @@ function ghostY() {
 function hardDrop() {
   const gy = ghostY();
   score += (gy - current.y) * 2;
+  if (gy > current.y) lastActionWasRotate = false;
   current.y = gy;
   lockPiece();
 }
@@ -147,6 +217,7 @@ function hardDrop() {
 function softDrop() {
   if (!collide(board, current.shape, current.x, current.y + 1)) {
     current.y++;
+    lastActionWasRotate = false;
     score += 1;
     updateHUD();
   } else {
@@ -155,14 +226,16 @@ function softDrop() {
 }
 
 function lockPiece() {
+  const tspin = !current.power && lastActionWasRotate && isTSpin(board, current);
   if (current.power) applyPowerup(current);
   else merge();
-  clearLines();
+  clearLines(tspin);
   spawn();
 }
 
 function spawn() {
   current = next;
+  lastActionWasRotate = false;
   next = randomPiece();
   if (collide(board, current.shape, current.x, current.y)) {
     endGame();
@@ -175,6 +248,7 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  comboEl.textContent = combo >= 2 ? `x${comboMultiplier(combo)}` : '—';
   if (freezeRemaining > 0) effectEl.textContent = `❄ ${(freezeRemaining / 1000).toFixed(1)}s`;
   else if (next.power) effectEl.textContent = `¡${POWERUP_STYLES[next.power].label}!`;
   else effectEl.textContent = `en ${nextPowerupAtLines - lines} líneas`;
@@ -258,6 +332,34 @@ function draw() {
     ctx.fillStyle = 'rgba(128, 216, 255, 0.08)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
+  drawEffects();
+}
+
+function drawEffects() {
+  if (flashRemaining > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.25 * flashRemaining / FLASH_MS})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 26px system-ui, sans-serif';
+  for (const popup of popups) {
+    const progress = 1 - popup.remaining / POPUP_MS;
+    ctx.globalAlpha = Math.min(1, 2 * (1 - progress));
+    ctx.fillStyle = '#ffd740';
+    ctx.strokeStyle = '#0f0f17';
+    ctx.lineWidth = 4;
+    const y = canvas.height * 0.4 + popup.row * 34 - progress * 40;
+    ctx.strokeText(popup.text, canvas.width / 2, y);
+    ctx.fillText(popup.text, canvas.width / 2, y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function updateEffects(dt) {
+  flashRemaining = Math.max(0, flashRemaining - dt);
+  for (const popup of popups) popup.remaining -= dt;
+  popups = popups.filter(popup => popup.remaining > 0);
 }
 
 function drawNext() {
@@ -294,6 +396,7 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
+  updateEffects(dt);
   if (freezeRemaining > 0) {
     freezeRemaining = Math.max(0, freezeRemaining - dt);
     updateHUD();
@@ -304,6 +407,7 @@ function loop(ts) {
     dropAccum = 0;
     if (!collide(board, current.shape, current.x, current.y + 1)) {
       current.y++;
+      lastActionWasRotate = false;
     } else {
       lockPiece();
     }
@@ -326,6 +430,11 @@ function init() {
   pendingPowerup = false;
   pendingReward = false;
   freezeRemaining = 0;
+  combo = 0;
+  b2bActive = false;
+  lastActionWasRotate = false;
+  popups = [];
+  flashRemaining = 0;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
@@ -337,13 +446,14 @@ function init() {
 
 document.addEventListener('keydown', e => {
   if (e.code === 'KeyP') { togglePause(); return; }
+  if (e.code === 'KeyM') { toggleSound(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
-      if (!collide(board, current.shape, current.x - 1, current.y)) current.x--;
+      moveHorizontal(-1);
       break;
     case 'ArrowRight':
-      if (!collide(board, current.shape, current.x + 1, current.y)) current.x++;
+      moveHorizontal(1);
       break;
     case 'ArrowDown':
       softDrop();
