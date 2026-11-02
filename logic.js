@@ -111,3 +111,24 @@ function countWildInFullRows(board) {
     .filter(row => row.every(v => v !== 0))
     .reduce((sum, row) => sum + row.filter(v => v === WILD).length, 0);
 }
+
+// ---- Piece selection ----
+
+const STANDARD_TYPES = [1, 2, 3, 4, 5, 6, 7];
+const PENTOMINO_TYPES = [9, 10, 11]; // +, U, Y
+const SINGLE_TYPE = 12;
+const HOLLOW_TYPE = 13;
+const PENTOMINO_CHANCE = 0.1;
+const HOLLOW_CHANCE = 0.03;
+const HOLLOW_MIN_LEVEL = 3;
+
+function pickFrom(list, random) {
+  return list[Math.floor(random() * list.length)];
+}
+
+function pickPieceType(level, random = Math.random) {
+  const roll = random();
+  if (level >= HOLLOW_MIN_LEVEL && roll < HOLLOW_CHANCE) return HOLLOW_TYPE;
+  if (roll < HOLLOW_CHANCE + PENTOMINO_CHANCE) return pickFrom(PENTOMINO_TYPES, random);
+  return pickFrom(STANDARD_TYPES, random);
+}

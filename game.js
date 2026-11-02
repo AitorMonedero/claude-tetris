@@ -12,6 +12,11 @@ const COLORS = [
   '#7986cb', // J - indigo
   '#ffb74d', // L - orange
   '#ffffff', // WILD - drawn as a rainbow gradient
+  '#f06292', // + - pink
+  '#4db6ac', // U - teal
+  '#aed581', // Y - lime
+  '#fff176', // single - light yellow
+  '#90a4ae', // hollow 3x3 - blue grey
 ];
 
 const POWERUP_STYLES = {
@@ -31,6 +36,12 @@ const PIECES = [
   [[5,5,0],[0,5,5],[0,0,0]],                  // Z
   [[6,0,0],[6,6,6],[0,0,0]],                  // J
   [[0,0,7],[7,7,7],[0,0,0]],                  // L
+  null,                                        // WILD is a color, not a piece
+  [[0,9,0],[9,9,9],[0,9,0]],                  // +
+  [[10,0,10],[10,10,10],[0,0,0]],             // U
+  [[0,0,0,0],[11,11,11,11],[0,11,0,0],[0,0,0,0]], // Y
+  [[12]],                                      // single (Tetris reward)
+  [[13,13,13],[13,0,13],[13,13,13]],          // hollow 3x3 (challenge)
 ];
 
 const canvas = document.getElementById('board');
@@ -47,7 +58,7 @@ const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
-let nextPowerupAtLines, pendingPowerup, freezeRemaining;
+let nextPowerupAtLines, pendingPowerup, freezeRemaining, pendingReward;
 
 function pieceAtSpawn(type, shape) {
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
@@ -58,7 +69,14 @@ function randomPiece() {
     pendingPowerup = false;
     return powerupPiece(POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)]);
   }
-  const type = Math.floor(Math.random() * 7) + 1;
+  if (pendingReward) {
+    pendingReward = false;
+    return pieceOfType(SINGLE_TYPE);
+  }
+  return pieceOfType(pickPieceType(level));
+}
+
+function pieceOfType(type) {
   return pieceAtSpawn(type, PIECES[type].map(row => [...row]));
 }
 
@@ -93,6 +111,7 @@ function clearLines() {
     score += lineClearScore(cleared, level) + wildCleared * WILD_BONUS * level;
     level = levelForLines(lines);
     dropInterval = dropIntervalForLevel(level);
+    if (cleared === 4) pendingReward = true;
     if (lines >= nextPowerupAtLines) {
       pendingPowerup = true;
       nextPowerupAtLines += POWERUP_EVERY_LINES;
@@ -305,6 +324,7 @@ function init() {
   dropAccum = 0;
   nextPowerupAtLines = POWERUP_EVERY_LINES;
   pendingPowerup = false;
+  pendingReward = false;
   freezeRemaining = 0;
   lastTime = performance.now();
   next = randomPiece();
