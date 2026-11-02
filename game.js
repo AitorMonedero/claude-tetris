@@ -54,6 +54,7 @@ const queueCtx = queueCanvas.getContext('2d');
 const queueSection = document.getElementById('queue-section');
 const holdCanvas = document.getElementById('hold-canvas');
 const holdCtx = holdCanvas.getContext('2d');
+const holdSection = document.getElementById('hold-section');
 const energyFill = document.getElementById('energy-fill');
 const energyHint = document.getElementById('energy-hint');
 const abilityMenuEl = document.getElementById('ability-menu');
@@ -83,7 +84,7 @@ const FLASH_MS = 250;
 const TSPIN_NAMES = ['T-SPIN', 'T-SPIN SINGLE', 'T-SPIN DOUBLE', 'T-SPIN TRIPLE'];
 
 let mode = null, startLevel, modeElapsed, garbageAccum, lockFlash;
-let energy, abilityMenu, previewRemaining, slowRemaining, undoSnapshot, heldPiece;
+let energy, abilityMenu, previewRemaining, slowRemaining, undoSnapshot, hold;
 
 const PIECE_NAMES = { 1: 'I', 2: 'O', 3: 'T', 4: 'S', 5: 'Z', 6: 'J', 7: 'L' };
 
@@ -93,7 +94,7 @@ const ABILITIES = [
   { name: 'Intercambiar pieza', submenu: 'swap' },
   { name: 'Ralentizar (10 s)', use: () => { slowRemaining = SLOW_MS; return true; } },
   { name: 'Deshacer colocación', isAvailable: () => undoSnapshot !== null, use: () => restoreSnapshot() },
-  { name: 'Reservar pieza', use: () => holdCurrentPiece() },
+  { name: 'Hold extra (este turno)', use: () => { grantExtraHold(hold); return true; } },
 ];
 
 const LOCK_FLASH_MS = 300;
@@ -350,13 +351,13 @@ function restoreSnapshot() {
   return true;
 }
 
-function holdCurrentPiece() {
-  const stored = freshPiece(current);
-  current = heldPiece ?? takeFromQueue();
-  heldPiece = stored;
+function tryHold() {
+  const nextPiece = applyHold(hold, current, takeFromQueue, freshPiece);
+  if (!nextPiece) return;
+  current = nextPiece;
   lastActionWasRotate = false;
   if (collide(board, current.shape, current.x, current.y)) endGame();
-  return true;
+  drawNext();
 }
 
 function swapCurrentPiece(type) {
@@ -442,6 +443,7 @@ function lockPiece() {
 function spawn() {
   current = takeFromQueue();
   lastActionWasRotate = false;
+  resetHoldForNewPiece(hold);
   if (collide(board, current.shape, current.x, current.y)) {
     endGame();
   }
@@ -458,6 +460,7 @@ function updateHUD() {
   if (freezeRemaining > 0) effectEl.textContent = `❄ ${(freezeRemaining / 1000).toFixed(1)}s`;
   else if (queue[0].power) effectEl.textContent = `¡${POWERUP_STYLES[queue[0].power].label}!`;
   else effectEl.textContent = `en ${nextPowerupAtLines - lines} líneas`;
+  holdSection.classList.toggle('locked', hold.usesLeft <= 0);
   energyFill.style.width = `${(energy / ENERGY_MAX) * 100}%`;
   energyFill.classList.toggle('full', energy >= ENERGY_MAX);
   if (slowRemaining > 0) energyHint.textContent = `⏳ lento ${(slowRemaining / 1000).toFixed(1)}s`;
@@ -595,7 +598,7 @@ function drawNext() {
 
 function drawHold() {
   holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
-  if (heldPiece) drawPieceCentered(holdCtx, heldPiece, 30, 4);
+  if (hold.piece) drawPieceCentered(holdCtx, hold.piece, 30, 4);
 }
 
 function showOverlay(title, subtitle, view) {
@@ -725,7 +728,7 @@ function init(modeId = mode ? mode.id : 'classic') {
   previewRemaining = 0;
   slowRemaining = 0;
   undoSnapshot = null;
-  heldPiece = null;
+  hold = createHoldState();
   lastTime = performance.now();
   queue = [];
   refillQueue();
@@ -760,6 +763,11 @@ document.addEventListener('keydown', e => {
     case 'Space':
       e.preventDefault();
       hardDrop();
+      break;
+    case 'KeyC':
+    case 'ShiftLeft':
+    case 'ShiftRight':
+      tryHold();
       break;
     case 'KeyE':
       openAbilityMenu();

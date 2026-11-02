@@ -238,3 +238,29 @@ function cloneBoard(board) {
 function effectiveDropInterval(interval, slowed) {
   return slowed ? interval * SLOW_FACTOR : interval;
 }
+
+// ---- Hold ----
+
+const HOLD_USES_PER_TURN = 1;
+
+function createHoldState() {
+  return { piece: null, usesLeft: HOLD_USES_PER_TURN };
+}
+
+// Stores the current piece (reset with `fresh`) and returns the piece to play next:
+// the previously held one, or `takeNext()` if the slot was empty. Returns null while locked.
+function applyHold(hold, currentPiece, takeNext, fresh) {
+  if (hold.usesLeft <= 0) return null;
+  hold.usesLeft--;
+  const nextPiece = hold.piece ? fresh(hold.piece) : takeNext();
+  hold.piece = fresh(currentPiece);
+  return nextPiece;
+}
+
+function resetHoldForNewPiece(hold) {
+  hold.usesLeft = HOLD_USES_PER_TURN;
+}
+
+function grantExtraHold(hold) {
+  hold.usesLeft++;
+}
