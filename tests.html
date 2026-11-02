@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tetris · Tests</title>
+  <style>
+    body { background: #0f0f17; color: #e0e0e0; font-family: system-ui, sans-serif; padding: 24px; }
+    #summary { font-size: 20px; font-weight: 700; }
+    ul { list-style: none; padding: 0; font-family: 'Courier New', monospace; font-size: 13px; }
+    .pass { color: #81c784; }
+    .fail { color: #e57373; }
+  </style>
+</head>
+<body>
+  <p id="summary"></p>
+  <ul id="results"></ul>
+
+  <script src="logic.js"></script>
+  <script src="tests/runner.js"></script>
+  <script src="tests/logic.test.js"></script>
+  <script>reportResults();</script>
+</body>
+</html>
