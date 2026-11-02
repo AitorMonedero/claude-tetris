@@ -9,6 +9,24 @@
 <body>
   <div class="wrapper">
     <div class="game-container">
+      <aside class="panel panel-left">
+        <div class="panel-section" id="hold-section">
+          <span class="label">RESERVA</span>
+          <canvas id="hold-canvas" width="120" height="120"></canvas>
+        </div>
+
+        <div class="panel-section">
+          <span class="label">ENERGÍA</span>
+          <div class="energy-bar"><div class="energy-fill" id="energy-fill"></div></div>
+          <span class="energy-hint" id="energy-hint"></span>
+        </div>
+
+        <div class="panel-section hidden" id="queue-section">
+          <span class="label">SIGUIENTES</span>
+          <canvas id="queue-canvas" width="120" height="300"></canvas>
+        </div>
+      </aside>
+
       <canvas id="board" width="300" height="600"></canvas>
 
       <aside class="panel">
@@ -52,6 +70,7 @@
             <li><kbd>↑</kbd> rotar</li>
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
+            <li><kbd>E</kbd> habilidad</li>
             <li><kbd>P</kbd> pausa</li>
             <li><kbd>M</kbd> <span id="sound">sonido ON</span></li>
           </ul>
@@ -64,6 +83,7 @@
         <p id="overlay-title">TETRIS</p>
         <p id="overlay-score"></p>
         <div id="mode-menu" class="mode-menu"></div>
+        <div id="ability-menu" class="ability-menu hidden"></div>
         <div id="end-actions" class="end-actions hidden">
           <button id="restart-btn">Reintentar</button>
           <button id="menu-btn" class="secondary">Cambiar modo</button>

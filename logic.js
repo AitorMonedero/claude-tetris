@@ -217,3 +217,24 @@ function formatTime(ms) {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
 }
+
+// ---- Abilities ----
+
+const ENERGY_MAX = 100;
+const ENERGY_PER_LINE = 10;
+const QUEUE_SIZE = 5;
+const PREVIEW_MS = 20000;
+const SLOW_MS = 10000;
+const SLOW_FACTOR = 2.5;
+
+function addEnergy(energy, cleared) {
+  return Math.min(ENERGY_MAX, energy + cleared * ENERGY_PER_LINE);
+}
+
+function cloneBoard(board) {
+  return board.map(row => [...row]);
+}
+
+function effectiveDropInterval(interval, slowed) {
+  return slowed ? interval * SLOW_FACTOR : interval;
+}
