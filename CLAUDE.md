@@ -47,4 +47,5 @@ Tetris en HTML5 Canvas (tablero de 10×20 celdas, canvas de 300×600) con JavaSc
 - No hay módulos: las constantes y funciones de `logic.js` y `game.js` comparten el ámbito global del navegador (`COLS`, `ROWS`, `LINE_SCORES` en `logic.js`; `BLOCK`, `COLORS`, `PIECES` en `game.js`). No redeclarar un `const` en ambos ficheros. `logic.js` debe cargarse antes que `game.js`.
 - El idioma de la UI es español; el texto del overlay de game over está en inglés (`GAME OVER`).
 - `freshPiece(piece)` devuelve la pieza en su posición y orientación de spawn; úsalo siempre que una pieza vuelva a la cola, a la reserva o a un snapshot.
+- Tema claro/oscuro: `setTheme()` cambia `data-theme` en `<html>`. En `style.css` usa siempre las variables de `:root` / `[data-theme="light"]` (`--surface`, `--accent`, `--highlight`, `--success`…) en lugar de colores fijos; el canvas toma `--grid` vía `gridColor`.
 - La clase `.hidden` es global (`display: none !important`) y la usan overlay, menú, acciones y secciones del panel.

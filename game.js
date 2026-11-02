@@ -9,7 +9,7 @@ const COLORS = [
   '#ba68c8', // T - purple
   '#81c784', // S - green
   '#e57373', // Z - red
-  '#7986cb', // J - indigo
+  '#90caf9', // J - pale blue
   '#ffb74d', // L - orange
   '#ffffff', // WILD - drawn as a rainbow gradient
   '#f06292', // + - pink
@@ -74,7 +74,9 @@ const menuBtn = document.getElementById('menu-btn');
 const objectiveSection = document.getElementById('objective-section');
 const modeNameEl = document.getElementById('mode-name');
 const objectiveEl = document.getElementById('objective');
+const themeBtn = document.getElementById('theme-toggle');
 
+let gridColor = '#22222e';
 let board, current, queue, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let nextPowerupAtLines, pendingPowerup, freezeRemaining, pendingReward;
 let combo, b2bActive, lastActionWasRotate, popups, flashRemaining;
@@ -514,7 +516,7 @@ function drawPiece(context, piece, ox, oy, size, alpha) {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = gridColor;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -779,5 +781,23 @@ document.addEventListener('keydown', e => {
 restartBtn.addEventListener('click', () => init());
 menuBtn.addEventListener('click', showModeMenu);
 
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  gridColor = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
+  themeBtn.textContent = t === 'light' ? '☀️' : '🌙';
+  themeBtn.setAttribute('aria-label', t === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
+  // Before the first game there is no piece to draw yet.
+  if (current) {
+    draw();
+    drawNext();
+  }
+}
+
+themeBtn.addEventListener('click', () => {
+  setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  themeBtn.blur();
+});
+
 buildModeMenu();
+setTheme('dark');
 showModeMenu();
