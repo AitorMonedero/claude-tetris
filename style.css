@@ -70,6 +70,14 @@ body {
   letter-spacing: 1px;
 }
 
+.effect {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e040fb;
+  letter-spacing: 1px;
+  min-height: 18px;
+}
+
 #next-canvas {
   display: block;
   border: 1px solid #2a2a3a;
