@@ -14,6 +14,11 @@
       <aside class="panel">
         <h1 class="title">TETRIS</h1>
 
+        <div class="panel-section hidden" id="objective-section">
+          <span class="label" id="mode-name"></span>
+          <span class="objective" id="objective"></span>
+        </div>
+
         <div class="panel-section">
           <span class="label">SCORE</span>
           <span class="value" id="score">0</span>
@@ -54,11 +59,15 @@
       </aside>
     </div>
 
-    <div id="overlay" class="overlay hidden">
+    <div id="overlay" class="overlay">
       <div class="overlay-box">
-        <p id="overlay-title">GAME OVER</p>
+        <p id="overlay-title">TETRIS</p>
         <p id="overlay-score"></p>
-        <button id="restart-btn">Reiniciar</button>
+        <div id="mode-menu" class="mode-menu"></div>
+        <div id="end-actions" class="end-actions hidden">
+          <button id="restart-btn">Reintentar</button>
+          <button id="menu-btn" class="secondary">Cambiar modo</button>
+        </div>
       </div>
     </div>
   </div>
