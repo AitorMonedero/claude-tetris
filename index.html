@@ -11,7 +11,7 @@
     <div class="game-container">
       <aside class="panel panel-left">
         <div class="panel-section" id="hold-section">
-          <span class="label">RESERVA</span>
+          <span class="label">HOLD</span>
           <canvas id="hold-canvas" width="120" height="120"></canvas>
         </div>
 
@@ -37,21 +37,23 @@
           <span class="objective" id="objective"></span>
         </div>
 
-        <div class="panel-section">
-          <span class="label">SCORE</span>
-          <span class="value" id="score">0</span>
-        </div>
-        <div class="panel-section">
-          <span class="label">LINES</span>
-          <span class="value" id="lines">0</span>
-        </div>
-        <div class="panel-section">
-          <span class="label">LEVEL</span>
-          <span class="value" id="level">1</span>
-        </div>
-        <div class="panel-section">
-          <span class="label">COMBO</span>
-          <span class="value combo" id="combo">—</span>
+        <div class="stats">
+          <div class="panel-section">
+            <span class="label">SCORE</span>
+            <span class="value" id="score">0</span>
+          </div>
+          <div class="panel-section">
+            <span class="label">LINES</span>
+            <span class="value" id="lines">0</span>
+          </div>
+          <div class="panel-section">
+            <span class="label">LEVEL</span>
+            <span class="value" id="level">1</span>
+          </div>
+          <div class="panel-section">
+            <span class="label">COMBO</span>
+            <span class="value combo" id="combo">—</span>
+          </div>
         </div>
         <div class="panel-section">
           <span class="label">POWER-UP</span>
@@ -70,6 +72,7 @@
             <li><kbd>↑</kbd> rotar</li>
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
+            <li><kbd>C</kbd><kbd>Shift</kbd> hold</li>
             <li><kbd>E</kbd> habilidad</li>
             <li><kbd>P</kbd> pausa</li>
             <li><kbd>M</kbd> <span id="sound">sonido ON</span></li>
