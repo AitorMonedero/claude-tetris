@@ -17,6 +17,7 @@ const COLORS = [
   '#aed581', // Y - lime
   '#fff176', // single - light yellow
   '#90a4ae', // hollow 3x3 - blue grey
+  '#4a4f5c', // GARBAGE - challenge blocks
 ];
 
 const POWERUP_STYLES = {
@@ -57,7 +58,13 @@ const soundEl = document.getElementById('sound');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
+const modeMenu = document.getElementById('mode-menu');
+const endActions = document.getElementById('end-actions');
 const restartBtn = document.getElementById('restart-btn');
+const menuBtn = document.getElementById('menu-btn');
+const objectiveSection = document.getElementById('objective-section');
+const modeNameEl = document.getElementById('mode-name');
+const objectiveEl = document.getElementById('objective');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let nextPowerupAtLines, pendingPowerup, freezeRemaining, pendingReward;
@@ -66,6 +73,62 @@ let combo, b2bActive, lastActionWasRotate, popups, flashRemaining;
 const POPUP_MS = 1200;
 const FLASH_MS = 250;
 const TSPIN_NAMES = ['T-SPIN', 'T-SPIN SINGLE', 'T-SPIN DOUBLE', 'T-SPIN TRIPLE'];
+
+let mode = null, startLevel, modeElapsed, garbageAccum, lockFlash;
+
+const LOCK_FLASH_MS = 300;
+
+const MODES = {
+  classic: {
+    name: 'Clásico',
+    description: 'Partida libre, sin objetivo.',
+  },
+  sprint: {
+    name: 'Sprint 40',
+    description: 'Limpia 40 líneas en 2 minutos.',
+    timeLimitMs: 120000,
+    isWon: () => lines >= 40,
+    progress: () => `${lines}/40 líneas · ${formatTime(timeLeft())}`,
+  },
+  garbage: {
+    name: 'Marea de basura',
+    description: 'Sobrevive 2 minutos: cada 10 s sube una fila de basura.',
+    timeLimitMs: 120000,
+    winOnTimeout: true,
+    garbageEveryMs: 10000,
+    progress: () => `${formatTime(timeLeft())} · sube en ${formatTime(mode.garbageEveryMs - garbageAccum)}`,
+  },
+  fixed: {
+    name: 'Bloques fijos',
+    description: 'Elimina todos los bloques grises pre-colocados.',
+    setup: () => placeFixedBlocks(board),
+    isWon: () => countCells(board, GARBAGE) === 0,
+    progress: () => `quedan ${countCells(board, GARBAGE)} bloques`,
+  },
+  invisible: {
+    name: 'Invisibles',
+    description: 'Las piezas desaparecen al tocar suelo. Limpia 20 líneas.',
+    hideLockedBlocks: true,
+    isWon: () => lines >= 20,
+    progress: () => `${lines}/20 líneas`,
+  },
+  reverse: {
+    name: 'Rotación inversa',
+    description: 'Empiezas en nivel 4 y desde el 5 se gira al revés. Limpia 30 líneas.',
+    startLevel: 4,
+    reverseRotationFromLevel: 5,
+    isWon: () => lines >= 30,
+    progress: () => `${lines}/30 líneas${isRotationReversed() ? ' · ↺ inversa' : ''}`,
+  },
+};
+
+function timeLeft() {
+  return mode.timeLimitMs - modeElapsed;
+}
+
+function isRotationReversed() {
+  return mode.reverseRotationFromLevel !== undefined && level >= mode.reverseRotationFromLevel;
+}
 
 function pieceAtSpawn(type, shape) {
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
@@ -92,7 +155,7 @@ function powerupPiece(power) {
 }
 
 function tryRotate() {
-  const rotated = rotateCW(current.shape);
+  const rotated = isRotationReversed() ? rotateCCW(current.shape) : rotateCW(current.shape);
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
     if (!collide(board, rotated, current.x + kick, current.y)) {
@@ -130,7 +193,7 @@ function clearLines(tspin = false) {
   score += computeClearScore({ cleared, level, combo, tspin, b2b, perfect, wildCount });
   announceClear({ cleared, tspin, b2b, perfect });
   lines += cleared;
-  level = levelForLines(lines);
+  level = levelForLines(lines) + startLevel - 1;
   dropInterval = dropIntervalForLevel(level);
   if (cleared === 4) pendingReward = true;
   if (lines >= nextPowerupAtLines) {
@@ -227,10 +290,12 @@ function softDrop() {
 
 function lockPiece() {
   const tspin = !current.power && lastActionWasRotate && isTSpin(board, current);
+  if (mode.hideLockedBlocks) lockFlash = { piece: { ...current }, remaining: LOCK_FLASH_MS };
   if (current.power) applyPowerup(current);
   else merge();
   clearLines(tspin);
   spawn();
+  if (!gameOver && mode.isWon?.()) endGame(true);
 }
 
 function spawn() {
@@ -248,6 +313,7 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  if (mode.progress) objectiveEl.textContent = mode.progress();
   comboEl.textContent = combo >= 2 ? `x${comboMultiplier(combo)}` : '—';
   if (freezeRemaining > 0) effectEl.textContent = `❄ ${(freezeRemaining / 1000).toFixed(1)}s`;
   else if (next.power) effectEl.textContent = `¡${POWERUP_STYLES[next.power].label}!`;
@@ -320,12 +386,14 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
 
-  // board
-  for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
-      drawBlock(ctx, c, r, board[r][c], BLOCK);
-
-  drawPiece(ctx, current, current.x, ghostY(), BLOCK, 0.2);
+  if (mode.hideLockedBlocks) {
+    if (lockFlash) drawPiece(ctx, lockFlash.piece, lockFlash.piece.x, lockFlash.piece.y, BLOCK, lockFlash.remaining / LOCK_FLASH_MS);
+  } else {
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        drawBlock(ctx, c, r, board[r][c], BLOCK);
+    drawPiece(ctx, current, current.x, ghostY(), BLOCK, 0.2);
+  }
   drawPiece(ctx, current, current.x, current.y, BLOCK);
 
   if (freezeRemaining > 0) {
@@ -370,12 +438,58 @@ function drawNext() {
   drawPiece(nextCtx, next, offX, offY, NB);
 }
 
-function endGame() {
+function showOverlay(title, subtitle, view) {
+  overlayTitle.textContent = title;
+  overlayTitle.classList.toggle('win', view === 'win');
+  overlayScore.textContent = subtitle;
+  modeMenu.classList.toggle('hidden', view !== 'menu');
+  endActions.classList.toggle('hidden', view !== 'end' && view !== 'win');
+  overlay.classList.remove('hidden');
+}
+
+function endGame(won = false) {
   gameOver = true;
   cancelAnimationFrame(animId);
-  overlayTitle.textContent = 'GAME OVER';
-  overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
-  overlay.classList.remove('hidden');
+  showOverlay(won ? '¡OBJETIVO CUMPLIDO!' : 'GAME OVER', `Puntuación: ${score.toLocaleString()}`, won ? 'win' : 'end');
+}
+
+function showModeMenu() {
+  gameOver = true;
+  cancelAnimationFrame(animId);
+  showOverlay('TETRIS', 'Elige modo de juego', 'menu');
+}
+
+function buildModeMenu() {
+  for (const [id, { name, description }] of Object.entries(MODES)) {
+    const button = document.createElement('button');
+    button.className = 'mode-btn';
+    button.innerHTML = `<strong>${name}</strong><span>${description}</span>`;
+    button.addEventListener('click', () => init(id));
+    modeMenu.appendChild(button);
+  }
+}
+
+function riseGarbage() {
+  const overflow = pushGarbageRow(board, Math.floor(Math.random() * COLS));
+  playTone(110, 0.15);
+  while (collide(board, current.shape, current.x, current.y) && current.y > -current.shape.length) current.y--;
+  if (overflow || collide(board, current.shape, current.x, current.y)) endGame(false);
+}
+
+function updateChallenge(dt) {
+  modeElapsed += dt;
+  if (lockFlash) {
+    lockFlash.remaining -= dt;
+    if (lockFlash.remaining <= 0) lockFlash = null;
+  }
+  if (mode.garbageEveryMs) {
+    garbageAccum += dt;
+    if (garbageAccum >= mode.garbageEveryMs) {
+      garbageAccum -= mode.garbageEveryMs;
+      riseGarbage();
+    }
+  }
+  if (!gameOver && mode.timeLimitMs && modeElapsed >= mode.timeLimitMs) endGame(mode.winOnTimeout);
 }
 
 function togglePause() {
@@ -387,9 +501,7 @@ function togglePause() {
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    showOverlay('PAUSA', '', 'pause');
   }
 }
 
@@ -397,13 +509,13 @@ function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
   updateEffects(dt);
+  updateChallenge(dt);
   if (freezeRemaining > 0) {
     freezeRemaining = Math.max(0, freezeRemaining - dt);
-    updateHUD();
   } else {
     dropAccum += dt;
   }
-  if (dropAccum >= dropInterval) {
+  if (!gameOver && dropAccum >= dropInterval) {
     dropAccum = 0;
     if (!collide(board, current.shape, current.x, current.y + 1)) {
       current.y++;
@@ -413,18 +525,25 @@ function loop(ts) {
     }
   }
   draw();
+  updateHUD();
   if (gameOver) return;
   animId = requestAnimationFrame(loop);
 }
 
-function init() {
+function init(modeId = mode ? mode.id : 'classic') {
+  mode = { id: modeId, ...MODES[modeId] };
   board = createBoard();
+  mode.setup?.();
+  startLevel = mode.startLevel ?? 1;
+  modeElapsed = 0;
+  garbageAccum = 0;
+  lockFlash = null;
   score = 0;
   lines = 0;
-  level = 1;
+  level = startLevel;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = dropIntervalForLevel(level);
   dropAccum = 0;
   nextPowerupAtLines = POWERUP_EVERY_LINES;
   pendingPowerup = false;
@@ -438,6 +557,8 @@ function init() {
   lastTime = performance.now();
   next = randomPiece();
   spawn();
+  modeNameEl.textContent = mode.name.toUpperCase();
+  objectiveSection.classList.toggle('hidden', !mode.progress);
   updateHUD();
   overlay.classList.add('hidden');
   cancelAnimationFrame(animId);
@@ -470,6 +591,8 @@ document.addEventListener('keydown', e => {
   updateHUD();
 });
 
-restartBtn.addEventListener('click', init);
+restartBtn.addEventListener('click', () => init());
+menuBtn.addEventListener('click', showModeMenu);
 
-init();
+buildModeMenu();
+showModeMenu();

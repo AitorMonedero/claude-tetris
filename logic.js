@@ -24,6 +24,10 @@ function collide(board, shape, ox, oy) {
   return false;
 }
 
+function rotateCCW(shape) {
+  return rotateCW(rotateCW(rotateCW(shape)));
+}
+
 function rotateCW(shape) {
   const rows = shape.length, cols = shape[0].length;
   const result = Array.from({ length: cols }, () => new Array(rows).fill(0));
@@ -92,8 +96,8 @@ function applyTint(board, colorIndex) {
 // Color the tint power-up converts: the block it lands on, or any color on the board if it lands on the floor.
 function tintTargetColor(board, x, y, random = Math.random) {
   const below = y + 1 < ROWS ? board[y + 1][x] : 0;
-  if (below && below !== WILD) return below;
-  const present = [...new Set(board.flat().filter(v => v && v !== WILD))];
+  if (below && below !== WILD && below !== GARBAGE) return below;
+  const present = [...new Set(board.flat().filter(v => v && v !== WILD && v !== GARBAGE))];
   return present.length ? present[Math.floor(random() * present.length)] : 0;
 }
 
@@ -173,4 +177,43 @@ function computeClearScore({ cleared, level, combo = 1, tspin = false, b2b = fal
   const comboPoints = cleared > 0 ? base * comboMultiplier(combo) : base;
   const bonus = wildCount * WILD_BONUS * level + (perfect ? PERFECT_CLEAR_BONUS * level : 0);
   return Math.round(comboPoints + bonus);
+}
+
+// ---- Challenge modes ----
+
+const GARBAGE = 14;
+
+// Bottom rows for the "fixed blocks" challenge: no row is full, so they must be dug out.
+const FIXED_BLOCKS_PATTERN = [
+  'x..x..x..x',
+  '.x..xx..x.',
+  'xx.x..x.xx',
+  'x.xx.x.xx.',
+  '.xx.xx.x.x',
+  'xx.xx.xxx.',
+];
+
+function placeFixedBlocks(board) {
+  const offset = ROWS - FIXED_BLOCKS_PATTERN.length;
+  FIXED_BLOCKS_PATTERN.forEach((row, r) =>
+    [...row].forEach((ch, c) => { if (ch === 'x') board[offset + r][c] = GARBAGE; }));
+}
+
+function countCells(board, value) {
+  return board.reduce((sum, row) => sum + row.filter(v => v === value).length, 0);
+}
+
+// Pushes a garbage row with one hole from the bottom. Returns true if blocks were pushed off the top.
+function pushGarbageRow(board, holeCol) {
+  const overflow = board[0].some(v => v !== 0);
+  board.shift();
+  const row = new Array(COLS).fill(GARBAGE);
+  row[holeCol] = 0;
+  board.push(row);
+  return overflow;
+}
+
+function formatTime(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
 }
