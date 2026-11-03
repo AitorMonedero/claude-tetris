@@ -353,3 +353,10 @@ function startLevelForMode(modeStartLevel, preferred) {
 function wrapMenuIndex(index, delta, count) {
   return ((index + delta) % count + count) % count;
 }
+
+// ---- Skins ----
+
+// Returns the stored skin id if it is still available, otherwise the fallback.
+function resolveSkinId(stored, availableIds, fallback) {
+  return typeof stored === 'string' && availableIds.includes(stored) ? stored : fallback;
+}

@@ -81,6 +81,7 @@ const objectiveSection = document.getElementById('objective-section');
 const modeNameEl = document.getElementById('mode-name');
 const objectiveEl = document.getElementById('objective');
 const themeBtn = document.getElementById('theme-toggle');
+const skinSelect = document.getElementById('skin-select');
 
 let gridColor = '#22222e';
 let board, current, queue, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
@@ -485,15 +486,179 @@ function wildGradient(context, px, py, size) {
   return gradient;
 }
 
+// ---- Skins ----
+// Each skin: `colors` indexed like COLORS, `background` (canvas fill, or null to show the theme's
+// CSS background), optional `gridColor` (null uses the theme's --grid) and
+// `drawCell(context, px, py, size, fill)`, where `fill` is a color string or the WILD gradient.
+
+const SKIN_STORAGE_KEY = 'tetris.skin';
+const DEFAULT_SKIN_ID = 'retro';
+const PIXEL_TEXTURE = [
+  'LLLLD',
+  'L.L.D',
+  'LL..D',
+  'L...D',
+  'DDDDD',
+];
+
+const SKINS = {
+  retro: {
+    name: 'Retro',
+    colors: COLORS,
+    background: null,
+    gridColor: null,
+    drawCell: drawRetroCell,
+  },
+  neon: {
+    name: 'Neón',
+    colors: [
+      null, '#00f0ff', '#fff200', '#d000ff', '#39ff14', '#ff073a', '#1f6bff', '#ff8c00',
+      '#ffffff', '#ff10f0', '#00ffc8', '#b4ff00', '#ffff66', '#8899ff', '#4a4f6a',
+    ],
+    background: '#05050a',
+    gridColor: '#15152a',
+    drawCell: drawNeonCell,
+  },
+  pastel: {
+    name: 'Pastel',
+    colors: [
+      null, '#a8e6f0', '#fdeca0', '#d9b8e8', '#b9e4c0', '#f6b8b8', '#bcd4f6', '#fbd3a8',
+      '#ffffff', '#f7bcd6', '#a8ddd5', '#d4ebb0', '#fff5b8', '#c3ccd6', '#9aa0ab',
+    ],
+    background: null,
+    gridColor: null,
+    drawCell: drawPastelCell,
+  },
+  pixel: {
+    name: 'Pixel',
+    colors: [
+      null, '#00bcd4', '#ffeb3b', '#9c27b0', '#4caf50', '#f44336', '#3f51b5', '#ff9800',
+      '#ffffff', '#e91e63', '#009688', '#8bc34a', '#ffee58', '#78909c', '#555a66',
+    ],
+    background: null,
+    gridColor: null,
+    drawCell: drawPixelCell,
+  },
+};
+
+let activeSkin = SKINS[DEFAULT_SKIN_ID];
+
+function drawRetroCell(context, px, py, size, fill) {
+  context.fillStyle = fill;
+  context.fillRect(px, py, size, size);
+  context.fillStyle = 'rgba(255,255,255,0.12)';
+  context.fillRect(px, py, size, 4);
+}
+
+function drawNeonCell(context, px, py, size, fill) {
+  const baseAlpha = context.globalAlpha;
+  context.globalAlpha = baseAlpha * 0.25;
+  context.fillStyle = fill;
+  context.fillRect(px, py, size, size);
+  context.globalAlpha = baseAlpha;
+  context.shadowColor = typeof fill === 'string' ? fill : '#ffffff';
+  context.shadowBlur = Math.max(4, size * 0.4);
+  context.strokeStyle = fill;
+  context.lineWidth = 2;
+  context.strokeRect(px + 1.5, py + 1.5, size - 3, size - 3);
+  context.shadowBlur = 0;
+}
+
+function traceRoundedRect(context, x, y, width, height, radius) {
+  context.beginPath();
+  if (typeof context.roundRect === 'function') {
+    context.roundRect(x, y, width, height, radius);
+    return;
+  }
+  context.moveTo(x + radius, y);
+  context.arcTo(x + width, y, x + width, y + height, radius);
+  context.arcTo(x + width, y + height, x, y + height, radius);
+  context.arcTo(x, y + height, x, y, radius);
+  context.arcTo(x, y, x + width, y, radius);
+  context.closePath();
+}
+
+function drawPastelCell(context, px, py, size, fill) {
+  const radius = Math.max(2, size * 0.25);
+  traceRoundedRect(context, px, py, size, size, radius);
+  context.fillStyle = fill;
+  context.fill();
+  context.strokeStyle = 'rgba(0,0,0,0.2)';
+  context.lineWidth = 1;
+  context.stroke();
+  traceRoundedRect(context, px + size * 0.2, py + size * 0.15, size * 0.6, size * 0.2, size * 0.1);
+  context.fillStyle = 'rgba(255,255,255,0.45)';
+  context.fill();
+}
+
+function drawPixelCell(context, px, py, size, fill) {
+  context.fillStyle = fill;
+  context.fillRect(px, py, size, size);
+  const cells = PIXEL_TEXTURE.length;
+  const edge = i => Math.round(i * size / cells);
+  for (let r = 0; r < cells; r++)
+    for (let c = 0; c < cells; c++) {
+      const texel = PIXEL_TEXTURE[r][c];
+      if (texel === '.') continue;
+      context.fillStyle = texel === 'L' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)';
+      context.fillRect(px + edge(c), py + edge(r), edge(c + 1) - edge(c), edge(r + 1) - edge(r));
+    }
+}
+
+function paintSkinBackground(context) {
+  const { width, height } = context.canvas;
+  if (activeSkin.background) {
+    context.fillStyle = activeSkin.background;
+    context.fillRect(0, 0, width, height);
+  } else {
+    context.clearRect(0, 0, width, height);
+  }
+}
+
+function buildSkinSelect() {
+  for (const [id, skin] of Object.entries(SKINS)) {
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = skin.name;
+    skinSelect.appendChild(option);
+  }
+}
+
+function loadStoredSkinId() {
+  try {
+    return localStorage.getItem(SKIN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeSkinId(skinId) {
+  try {
+    localStorage.setItem(SKIN_STORAGE_KEY, skinId);
+  } catch {
+    // Storage may be unavailable (private mode); the skin still applies for this session.
+  }
+}
+
+// Applies the skin and returns the id actually used (unknown ids fall back to the default).
+function setSkin(id) {
+  const skinId = resolveSkinId(id, Object.keys(SKINS), DEFAULT_SKIN_ID);
+  activeSkin = SKINS[skinId];
+  skinSelect.value = skinId;
+  // Before the first game there is no piece to draw yet.
+  if (current) {
+    draw();
+    drawNext();
+  }
+  return skinId;
+}
+
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
   const px = x * size + 1, py = y * size + 1;
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = colorIndex === WILD ? wildGradient(context, px, py, size) : COLORS[colorIndex];
-  context.fillRect(px, py, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(px, py, size - 2, 4);
+  const fill = colorIndex === WILD ? wildGradient(context, px, py, size) : activeSkin.colors[colorIndex];
+  activeSkin.drawCell(context, px, py, size - 2, fill);
   context.globalAlpha = 1;
 }
 
@@ -524,7 +689,7 @@ function drawPiece(context, piece, ox, oy, size, alpha) {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = gridColor;
+  ctx.strokeStyle = activeSkin.gridColor || gridColor;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -541,7 +706,7 @@ function drawGrid() {
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  paintSkinBackground(ctx);
   drawGrid();
 
   if (mode.hideLockedBlocks) {
@@ -596,18 +761,18 @@ function drawPieceCentered(context, piece, size, cells, topCell = 0) {
 }
 
 function drawNext() {
-  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+  paintSkinBackground(nextCtx);
   drawPieceCentered(nextCtx, queue[0], 30, 4);
   queueSection.classList.toggle('hidden', previewRemaining <= 0);
   if (previewRemaining > 0) {
-    queueCtx.clearRect(0, 0, queueCanvas.width, queueCanvas.height);
+    paintSkinBackground(queueCtx);
     queue.slice(0, 5).forEach((piece, i) => drawPieceCentered(queueCtx, piece, 15, 8, i * 4));
   }
   drawHold();
 }
 
 function drawHold() {
-  holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+  paintSkinBackground(holdCtx);
   if (hold.piece) drawPieceCentered(holdCtx, hold.piece, 30, 4);
 }
 
@@ -1071,6 +1236,22 @@ themeBtn.addEventListener('click', () => {
   themeBtn.blur();
 });
 
+skinSelect.addEventListener('change', () => {
+  storeSkinId(setSkin(skinSelect.value));
+  skinSelect.blur();
+});
+
+// If the select keeps focus (e.g. closed with Esc), game keys must not step through skins mid-game.
+skinSelect.addEventListener('keydown', e => {
+  if (paused || gameOver) return;
+  if (e.code.startsWith('Arrow') || e.code === 'Space') {
+    e.preventDefault();
+    skinSelect.blur();
+  }
+});
+
 buildModeMenu();
+buildSkinSelect();
+setSkin(loadStoredSkinId());
 setTheme('dark');
 showModeMenu();
