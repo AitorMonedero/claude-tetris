@@ -264,3 +264,10 @@ function resetHoldForNewPiece(hold) {
 function grantExtraHold(hold) {
   hold.usesLeft++;
 }
+
+// ---- Skins ----
+
+// Returns the stored skin id if it is still available, otherwise the fallback.
+function resolveSkinId(stored, availableIds, fallback) {
+  return typeof stored === 'string' && availableIds.includes(stored) ? stored : fallback;
+}
