@@ -77,7 +77,7 @@
             <li><kbd>Space</kbd> caída</li>
             <li><kbd>C</kbd><kbd>Shift</kbd> hold</li>
             <li><kbd>E</kbd> habilidad</li>
-            <li><kbd>P</kbd> pausa</li>
+            <li><kbd>P</kbd><kbd>Esc</kbd> pausa</li>
             <li><kbd>M</kbd> <span id="sound">sonido ON</span></li>
           </ul>
         </div>
@@ -90,6 +90,36 @@
         <p id="overlay-score"></p>
         <div id="mode-menu" class="mode-menu"></div>
         <div id="ability-menu" class="ability-menu hidden"></div>
+        <div id="pause-menu" class="pause-menu hidden">
+          <div id="pause-main" class="pause-main">
+            <button type="button" class="pause-item" data-action="resume" tabindex="-1">Reanudar</button>
+            <button type="button" class="pause-item" data-action="restart" tabindex="-1">Reiniciar</button>
+            <button type="button" class="pause-item" data-action="controls" tabindex="-1">Ver controles</button>
+            <div class="pause-item start-level-row" data-action="start-level">
+              <span>Nivel inicial</span>
+              <span class="start-level-stepper">
+                <button type="button" class="step-btn" data-step="-1" tabindex="-1" aria-label="Bajar nivel inicial">−</button>
+                <span class="start-level-value" id="start-level-value">1</span>
+                <button type="button" class="step-btn" data-step="1" tabindex="-1" aria-label="Subir nivel inicial">+</button>
+              </span>
+            </div>
+            <p class="pause-hint">Nivel inicial: se aplica en la próxima partida.<br /><kbd>↑</kbd><kbd>↓</kbd> elegir · <kbd>←</kbd><kbd>→</kbd> nivel · <kbd>Enter</kbd> aceptar</p>
+          </div>
+          <div id="pause-controls" class="pause-controls hidden">
+            <ul>
+              <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+              <li><kbd>↑</kbd><kbd>X</kbd> rotar</li>
+              <li><kbd>↓</kbd> bajar (soft drop)</li>
+              <li><kbd>Space</kbd> caída instantánea</li>
+              <li><kbd>C</kbd><kbd>Shift</kbd> reserva (hold)</li>
+              <li><kbd>E</kbd> habilidad (barra llena)</li>
+              <li><kbd>P</kbd><kbd>Esc</kbd> pausa</li>
+              <li><kbd>M</kbd> sonido</li>
+            </ul>
+            <button type="button" class="pause-item focused" data-action="back" tabindex="-1">Volver</button>
+            <p class="pause-hint"><kbd>Esc</kbd> volver</p>
+          </div>
+        </div>
         <div id="end-actions" class="end-actions hidden">
           <button id="restart-btn">Reintentar</button>
           <button id="menu-btn" class="secondary">Cambiar modo</button>
