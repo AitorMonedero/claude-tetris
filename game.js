@@ -95,6 +95,15 @@ const TSPIN_NAMES = ['T-SPIN', 'T-SPIN SINGLE', 'T-SPIN DOUBLE', 'T-SPIN TRIPLE'
 let mode = null, startLevel, modeElapsed, garbageAccum, lockFlash;
 let energy, abilityMenu, previewRemaining, slowRemaining, undoSnapshot, hold;
 let maxCombo = 0, pendingRecordEntry = null, highlightedRecordIndex = -1;
+let activeChaosEvent, chaosEventRemaining, chaosEventAccum, lastChaosEvent, autoRotateAccum, windAccum, windDirection;
+
+const CHAOS_EVENT_STYLES = {
+  invert:     { popup: 'INVERTIDOS', hud: '⇄' },
+  wind:       { popup: 'VIENTO', hud: '💨' },
+  blackout:   { popup: 'APAGÓN', hud: '🌑' },
+  earthquake: { popup: 'TERREMOTO', hud: '🌋' },
+  garbage:    { popup: 'BASURA', hud: '⬆' },
+};
 
 const PIECE_NAMES = { 1: 'I', 2: 'O', 3: 'T', 4: 'S', 5: 'Z', 6: 'J', 7: 'L' };
 
@@ -151,7 +160,32 @@ const MODES = {
     isWon: () => lines >= 30,
     progress: () => `${lines}/30 líneas${isRotationReversed() ? ' · ↺ inversa' : ''}`,
   },
+  chaos: {
+    name: 'Caos',
+    description: 'Velocidades, formas, giros y eventos al azar. Sobrevive 3 minutos.',
+    chaos: true,
+    timeLimitMs: 180000,
+    winOnTimeout: true,
+    progress: () => chaosProgress(),
+  },
 };
+
+function chaosProgress() {
+  const parts = [formatTime(timeLeft())];
+  if (activeChaosEvent) {
+    parts.push(`${CHAOS_EVENT_STYLES[activeChaosEvent].hud} ${Math.ceil(chaosEventRemaining / 1000)}s`);
+  }
+  const traits = current?.chaos;
+  if (traits) {
+    const marks = (traits.speedFactor < 1 ? '⚡' : traits.speedFactor > 1 ? '🐢' : '') + (traits.autoRotateMs ? '↻' : '');
+    if (marks) parts.push(marks);
+  }
+  return parts.join(' · ');
+}
+
+function isBoardHidden() {
+  return mode.hideLockedBlocks || activeChaosEvent === 'blackout';
+}
 
 function timeLeft() {
   return mode.timeLimitMs - modeElapsed;
@@ -166,7 +200,14 @@ function pieceAtSpawn(type, shape) {
 }
 
 function randomPiece() {
-  return pieceOfType(pickPieceType(level));
+  if (!mode.chaos) return pieceOfType(pickPieceType(level));
+  const { speedFactor, autoRotateMs, randomShape } = rollChaosTraits();
+  const piece = randomShape ? customShapePiece(generateRandomPolyomino()) : pieceOfType(pickPieceType(level));
+  return { ...piece, chaos: { speedFactor, autoRotateMs } };
+}
+
+function customShapePiece(shape) {
+  return { ...pieceAtSpawn(CHAOS_SHAPE_TYPE, cloneBoard(shape)), customShape: shape };
 }
 
 function takePendingSpecialPiece() {
@@ -194,9 +235,11 @@ function takeFromQueue() {
   return piece;
 }
 
-// A copy of the piece back at its spawn position and orientation.
+// A copy of the piece back at its spawn position and orientation, keeping its chaos traits.
 function freshPiece(piece) {
-  return piece.power ? powerupPiece(piece.power) : pieceOfType(piece.type);
+  if (piece.power) return powerupPiece(piece.power);
+  const fresh = piece.customShape ? customShapePiece(piece.customShape) : pieceOfType(piece.type);
+  return piece.chaos ? { ...fresh, chaos: piece.chaos } : fresh;
 }
 
 function pieceOfType(type) {
@@ -443,7 +486,7 @@ function handleAbilityMenuKey(e) {
 function lockPiece() {
   undoSnapshot = takeSnapshot();
   const tspin = !current.power && lastActionWasRotate && isTSpin(board, current);
-  if (mode.hideLockedBlocks) lockFlash = { piece: { ...current }, remaining: LOCK_FLASH_MS };
+  if (isBoardHidden()) lockFlash = { piece: { ...current }, remaining: LOCK_FLASH_MS };
   if (current.power) applyPowerup(current);
   else merge();
   clearLines(tspin);
@@ -454,6 +497,7 @@ function lockPiece() {
 function spawn() {
   current = takeFromQueue();
   lastActionWasRotate = false;
+  autoRotateAccum = 0;
   resetHoldForNewPiece(hold);
   if (collide(board, current.shape, current.x, current.y)) {
     endGame();
@@ -709,7 +753,7 @@ function draw() {
   paintSkinBackground(ctx);
   drawGrid();
 
-  if (mode.hideLockedBlocks) {
+  if (isBoardHidden()) {
     if (lockFlash) drawPiece(ctx, lockFlash.piece, lockFlash.piece.x, lockFlash.piece.y, BLOCK, lockFlash.remaining / LOCK_FLASH_MS);
   } else {
     for (let r = 0; r < ROWS; r++)
@@ -963,8 +1007,74 @@ recordsClearBtn.addEventListener('click', handleClearRecordsClick);
 function riseGarbage() {
   const overflow = pushGarbageRow(board, Math.floor(Math.random() * COLS));
   playTone(110, 0.15);
-  while (collide(board, current.shape, current.x, current.y) && current.y > -current.shape.length) current.y--;
+  liftCurrentOutOfBoard();
   if (overflow || collide(board, current.shape, current.x, current.y)) endGame(false);
+}
+
+// After the board changes under the falling piece, push the piece up until it no longer overlaps.
+function liftCurrentOutOfBoard() {
+  while (collide(board, current.shape, current.x, current.y) && current.y > -current.shape.length) current.y--;
+}
+
+function startChaosEvent() {
+  const event = pickChaosEvent(Math.random, lastChaosEvent);
+  lastChaosEvent = event;
+  activeChaosEvent = CHAOS_EVENT_DURATIONS[event] ? event : null;
+  chaosEventRemaining = CHAOS_EVENT_DURATIONS[event];
+  let popup = CHAOS_EVENT_STYLES[event].popup;
+  switch (event) {
+    case 'wind':
+      windDirection = Math.random() < 0.5 ? -1 : 1;
+      windAccum = 0;
+      popup += windDirection < 0 ? ' ←' : ' →';
+      break;
+    case 'earthquake':
+      applyGravity(board);
+      liftCurrentOutOfBoard();
+      shakeBoard();
+      break;
+    case 'garbage':
+      riseGarbage();
+      break;
+  }
+  announce([popup], 3);
+}
+
+function shakeBoard() {
+  canvas.classList.remove('shake');
+  void canvas.offsetWidth; // restart the CSS animation
+  canvas.classList.add('shake');
+}
+
+function updateChaos(dt) {
+  if (current.chaos?.autoRotateMs) {
+    autoRotateAccum += dt;
+    if (autoRotateAccum >= current.chaos.autoRotateMs) {
+      autoRotateAccum = 0;
+      tryRotate();
+      lastActionWasRotate = false; // automatic spins never count as T-spins
+    }
+  }
+  if (activeChaosEvent) {
+    chaosEventRemaining = Math.max(0, chaosEventRemaining - dt);
+    if (activeChaosEvent === 'wind') {
+      windAccum += dt;
+      if (windAccum >= WIND_PUSH_MS) {
+        windAccum -= WIND_PUSH_MS;
+        moveHorizontal(windDirection);
+      }
+    }
+    if (chaosEventRemaining === 0) activeChaosEvent = null;
+  }
+  chaosEventAccum += dt;
+  if (chaosEventAccum >= CHAOS_EVENT_EVERY_MS) {
+    chaosEventAccum -= CHAOS_EVENT_EVERY_MS;
+    startChaosEvent();
+  }
+}
+
+function currentDropInterval() {
+  return current.chaos ? chaosDropInterval(dropInterval, current.chaos.speedFactor) : dropInterval;
 }
 
 function updateChallenge(dt) {
@@ -980,6 +1090,7 @@ function updateChallenge(dt) {
       riseGarbage();
     }
   }
+  if (mode.chaos && !gameOver) updateChaos(dt);
   if (!gameOver && mode.timeLimitMs && modeElapsed >= mode.timeLimitMs) endGame(mode.winOnTimeout);
 }
 
@@ -1119,7 +1230,7 @@ function loop(ts) {
   } else {
     dropAccum += dt;
   }
-  if (!gameOver && dropAccum >= effectiveDropInterval(dropInterval, slowRemaining > 0)) {
+  if (!gameOver && dropAccum >= effectiveDropInterval(currentDropInterval(), slowRemaining > 0)) {
     dropAccum = 0;
     if (!collide(board, current.shape, current.x, current.y + 1)) {
       current.y++;
@@ -1164,6 +1275,14 @@ function init(modeId = mode ? mode.id : 'classic') {
   slowRemaining = 0;
   undoSnapshot = null;
   hold = createHoldState();
+  activeChaosEvent = null;
+  chaosEventRemaining = 0;
+  chaosEventAccum = 0;
+  lastChaosEvent = null;
+  autoRotateAccum = 0;
+  windAccum = 0;
+  windDirection = 1;
+  canvas.classList.remove('shake');
   savePendingRecord();
   maxCombo = 0;
   highlightedRecordIndex = -1;
@@ -1188,10 +1307,10 @@ document.addEventListener('keydown', e => {
   if (gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
-      moveHorizontal(-1);
+      moveHorizontal(applyControlInversion(-1, activeChaosEvent === 'invert'));
       break;
     case 'ArrowRight':
-      moveHorizontal(1);
+      moveHorizontal(applyControlInversion(1, activeChaosEvent === 'invert'));
       break;
     case 'ArrowDown':
       softDrop();

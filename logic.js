@@ -354,6 +354,67 @@ function wrapMenuIndex(index, delta, count) {
   return ((index + delta) % count + count) % count;
 }
 
+// ---- Chaos mode ----
+
+const CHAOS_SHAPE_TYPE = 15; // generated shapes: no PIECES entry, each cell keeps its own color
+const CHAOS_COLOR_TYPES = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11];
+const CHAOS_SPEED_FACTORS = [0.4, 0.7, 1, 1.6, 2.5]; // multiplies the drop interval: < 1 is faster
+const CHAOS_RANDOM_SHAPE_CHANCE = 0.3;
+const CHAOS_AUTO_ROTATE_CHANCE = 0.25;
+const CHAOS_AUTO_ROTATE_MIN_MS = 800;
+const CHAOS_AUTO_ROTATE_SPREAD_MS = 800;
+const CHAOS_MIN_DROP_MS = 50;
+// No 4: every connected 4-cell shape is a standard tetromino, so it would not look new.
+const CHAOS_SHAPE_SIZES = [3, 5];
+const CHAOS_SHAPE_BOX = 4; // the preview is 4x4, so generated shapes must fit in it
+const CHAOS_EVENT_EVERY_MS = 15000;
+const CHAOS_EVENT_DURATIONS = { invert: 6000, wind: 5000, blackout: 4000, earthquake: 0, garbage: 0 };
+const CHAOS_EVENTS = Object.keys(CHAOS_EVENT_DURATIONS);
+const WIND_PUSH_MS = 500;
+
+// Random connected shape of 3 or 5 cells grown inside a 4x4 box, trimmed to its bounding box.
+function generateRandomPolyomino(random = Math.random) {
+  const colorIndex = pickFrom(CHAOS_COLOR_TYPES, random);
+  const size = pickFrom(CHAOS_SHAPE_SIZES, random);
+  const box = CHAOS_SHAPE_BOX;
+  const cells = [[Math.floor(random() * box), Math.floor(random() * box)]];
+  const isTaken = (r, c) => cells.some(([cr, cc]) => cr === r && cc === c);
+  while (cells.length < size) {
+    const [r, c] = pickFrom(cells, random);
+    const [dr, dc] = pickFrom([[1, 0], [-1, 0], [0, 1], [0, -1]], random);
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < box && nc >= 0 && nc < box && !isTaken(nr, nc)) cells.push([nr, nc]);
+  }
+  const rows = cells.map(([r]) => r), cols = cells.map(([, c]) => c);
+  const top = Math.min(...rows), left = Math.min(...cols);
+  const shape = Array.from({ length: Math.max(...rows) - top + 1 },
+    () => new Array(Math.max(...cols) - left + 1).fill(0));
+  for (const [r, c] of cells) shape[r - top][c - left] = colorIndex;
+  return shape;
+}
+
+function rollChaosTraits(random = Math.random) {
+  const speedFactor = pickFrom(CHAOS_SPEED_FACTORS, random);
+  const autoRotateMs = random() < CHAOS_AUTO_ROTATE_CHANCE
+    ? CHAOS_AUTO_ROTATE_MIN_MS + Math.floor(random() * CHAOS_AUTO_ROTATE_SPREAD_MS)
+    : 0;
+  const randomShape = random() < CHAOS_RANDOM_SHAPE_CHANCE;
+  return { speedFactor, autoRotateMs, randomShape };
+}
+
+function chaosDropInterval(baseInterval, speedFactor = 1) {
+  return Math.max(CHAOS_MIN_DROP_MS, Math.round(baseInterval * speedFactor));
+}
+
+// Never repeats the previous event, so consecutive events always feel different.
+function pickChaosEvent(random = Math.random, previous = null) {
+  return pickFrom(CHAOS_EVENTS.filter(event => event !== previous), random);
+}
+
+function applyControlInversion(dx, inverted) {
+  return inverted ? -dx : dx;
+}
+
 // ---- Skins ----
 
 // Returns the stored skin id if it is still available, otherwise the fallback.
