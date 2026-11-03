@@ -332,3 +332,24 @@ function updateBests(bests, { lines, maxCombo }) {
     maxCombo: Math.max(previous.maxCombo, maxCombo),
   };
 }
+
+// ---- Pause menu ----
+
+const START_LEVEL_MIN = 1;
+const START_LEVEL_MAX = 15;
+
+// Any input (string from storage, NaN, out of range) becomes a valid integer level.
+function clampStartLevel(value) {
+  const level = Math.round(Number(value));
+  if (Number.isNaN(level)) return START_LEVEL_MIN;
+  return Math.min(START_LEVEL_MAX, Math.max(START_LEVEL_MIN, level));
+}
+
+// A mode's own start level is a minimum: the player's preference can only raise it.
+function startLevelForMode(modeStartLevel, preferred) {
+  return Math.max(modeStartLevel ?? START_LEVEL_MIN, clampStartLevel(preferred));
+}
+
+function wrapMenuIndex(index, delta, count) {
+  return ((index + delta) % count + count) % count;
+}

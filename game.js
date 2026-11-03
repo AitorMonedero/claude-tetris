@@ -58,6 +58,12 @@ const holdSection = document.getElementById('hold-section');
 const energyFill = document.getElementById('energy-fill');
 const energyHint = document.getElementById('energy-hint');
 const abilityMenuEl = document.getElementById('ability-menu');
+const pauseMenuEl = document.getElementById('pause-menu');
+const pauseMainEl = document.getElementById('pause-main');
+const pauseControlsEl = document.getElementById('pause-controls');
+const pauseMainItems = [...pauseMainEl.querySelectorAll('.pause-item')];
+const startLevelValueEl = document.getElementById('start-level-value');
+const startLevelStepButtons = [...pauseMenuEl.querySelectorAll('[data-step]')];
 const scoreEl = document.getElementById('score');
 const linesEl = document.getElementById('lines');
 const levelEl = document.getElementById('level');
@@ -611,6 +617,7 @@ function showOverlay(title, subtitle, view) {
   overlayScore.textContent = subtitle;
   modeMenu.classList.toggle('hidden', view !== 'menu');
   abilityMenuEl.classList.toggle('hidden', view !== 'abilities');
+  pauseMenuEl.classList.toggle('hidden', view !== 'pause');
   endActions.classList.toggle('hidden', view !== 'end' && view !== 'win');
   toggleRecordsPanel(view === 'menu' || view === 'end' || view === 'win');
   overlay.classList.remove('hidden');
@@ -813,16 +820,124 @@ function updateChallenge(dt) {
 
 function togglePause() {
   if (gameOver || abilityMenu) return;
-  paused = !paused;
-  if (!paused) {
-    overlay.classList.add('hidden');
-    lastTime = performance.now();
-    loop(lastTime);
-  } else {
-    cancelAnimationFrame(animId);
-    showOverlay('PAUSA', '', 'pause');
+  if (paused) resumeGame();
+  else openPauseMenu();
+}
+
+// ---- Pause menu ----
+
+const START_LEVEL_STORAGE_KEY = 'tetris.startLevel';
+const PAUSE_MENU_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Space', 'Escape', 'Backspace'];
+let pauseView = 'main', pauseFocusIndex = 0;
+let preferredStartLevel = loadPreferredStartLevel();
+
+function loadPreferredStartLevel() {
+  try {
+    return clampStartLevel(localStorage.getItem(START_LEVEL_STORAGE_KEY));
+  } catch {
+    return START_LEVEL_MIN;
   }
 }
+
+function changePreferredStartLevel(delta) {
+  preferredStartLevel = clampStartLevel(preferredStartLevel + delta);
+  try {
+    localStorage.setItem(START_LEVEL_STORAGE_KEY, String(preferredStartLevel));
+  } catch {
+    // Storage may be unavailable (private mode); the preference still lasts this session.
+  }
+  renderPauseMenu();
+}
+
+function openPauseMenu() {
+  paused = true;
+  cancelAnimationFrame(animId);
+  pauseView = 'main';
+  pauseFocusIndex = 0;
+  renderPauseMenu();
+  showOverlay('PAUSA', '', 'pause');
+}
+
+// Restarting the clock avoids counting the paused time as one huge frame (instant drop).
+function resumeGame() {
+  paused = false;
+  overlay.classList.add('hidden');
+  lastTime = performance.now();
+  dropAccum = 0;
+  loop(lastTime);
+}
+
+function renderPauseMenu() {
+  pauseMainEl.classList.toggle('hidden', pauseView !== 'main');
+  pauseControlsEl.classList.toggle('hidden', pauseView !== 'controls');
+  pauseMainItems.forEach((item, i) => item.classList.toggle('focused', i === pauseFocusIndex));
+  startLevelValueEl.textContent = preferredStartLevel;
+  startLevelStepButtons.forEach(button => {
+    const step = Number(button.dataset.step);
+    button.disabled = clampStartLevel(preferredStartLevel + step) === preferredStartLevel;
+  });
+}
+
+function runPauseAction(action) {
+  switch (action) {
+    case 'resume':      resumeGame(); break;
+    case 'restart':     init(); break;
+    case 'controls':    pauseView = 'controls'; renderPauseMenu(); break;
+    case 'back':        pauseView = 'main'; renderPauseMenu(); break;
+  }
+}
+
+function isPauseKey(e) {
+  return e.code === 'KeyP' || e.code === 'Escape';
+}
+
+// Every key is consumed here so nothing reaches the game while the menu is open.
+function handlePauseMenuKey(e) {
+  if (PAUSE_MENU_KEYS.includes(e.code)) e.preventDefault();
+  if (pauseView === 'controls') {
+    if (e.repeat) return;
+    if (e.code === 'KeyP') resumeGame();
+    else if (['Escape', 'Enter', 'Space', 'Backspace'].includes(e.code)) runPauseAction('back');
+    return;
+  }
+  const focusedAction = pauseMainItems[pauseFocusIndex].dataset.action;
+  switch (e.code) {
+    case 'KeyP':
+    case 'Escape':
+      if (!e.repeat) resumeGame();
+      break;
+    case 'ArrowUp':
+    case 'ArrowDown':
+      pauseFocusIndex = wrapMenuIndex(pauseFocusIndex, e.code === 'ArrowUp' ? -1 : 1, pauseMainItems.length);
+      renderPauseMenu();
+      break;
+    case 'ArrowLeft':
+    case 'ArrowRight':
+      if (focusedAction === 'start-level') changePreferredStartLevel(e.code === 'ArrowLeft' ? -1 : 1);
+      break;
+    case 'Enter':
+    case 'Space':
+      if (!e.repeat) runPauseAction(focusedAction);
+      break;
+  }
+}
+
+pauseMenuEl.addEventListener('mousedown', e => e.preventDefault());
+pauseMenuEl.addEventListener('mouseover', e => {
+  const index = pauseMainItems.indexOf(e.target.closest('.pause-item'));
+  if (index === -1 || index === pauseFocusIndex) return;
+  pauseFocusIndex = index;
+  renderPauseMenu();
+});
+pauseMenuEl.addEventListener('click', e => {
+  const stepButton = e.target.closest('[data-step]');
+  if (stepButton) {
+    changePreferredStartLevel(Number(stepButton.dataset.step));
+    return;
+  }
+  const item = e.target.closest('[data-action]');
+  if (item) runPauseAction(item.dataset.action);
+});
 
 function loop(ts) {
   const dt = ts - lastTime;
@@ -858,7 +973,7 @@ function init(modeId = mode ? mode.id : 'classic') {
   mode = { id: modeId, ...MODES[modeId] };
   board = createBoard();
   mode.setup?.();
-  startLevel = mode.startLevel ?? 1;
+  startLevel = startLevelForMode(mode.startLevel, preferredStartLevel);
   modeElapsed = 0;
   garbageAccum = 0;
   lockFlash = null;
@@ -901,10 +1016,11 @@ function init(modeId = mode ? mode.id : 'classic') {
 
 document.addEventListener('keydown', e => {
   if (isTypingInField(e)) return;
-  if (e.code === 'KeyP') { togglePause(); return; }
   if (e.code === 'KeyM') { toggleSound(); return; }
   if (abilityMenu) { handleAbilityMenuKey(e); return; }
-  if (paused || gameOver) return;
+  if (paused) { handlePauseMenuKey(e); return; }
+  if (isPauseKey(e)) { if (!e.repeat) togglePause(); return; }
+  if (gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
       moveHorizontal(-1);
