@@ -87,6 +87,7 @@ const TSPIN_NAMES = ['T-SPIN', 'T-SPIN SINGLE', 'T-SPIN DOUBLE', 'T-SPIN TRIPLE'
 
 let mode = null, startLevel, modeElapsed, garbageAccum, lockFlash;
 let energy, abilityMenu, previewRemaining, slowRemaining, undoSnapshot, hold;
+let maxCombo = 0, pendingRecordEntry = null, highlightedRecordIndex = -1;
 
 const PIECE_NAMES = { 1: 'I', 2: 'O', 3: 'T', 4: 'S', 5: 'Z', 6: 'J', 7: 'L' };
 
@@ -231,6 +232,7 @@ function clearLines(tspin = false) {
     return;
   }
   combo++;
+  if (combo >= 2) maxCombo = Math.max(maxCombo, combo);
   const difficult = isDifficultClear(cleared, tspin);
   const b2b = difficult && b2bActive;
   const perfect = isBoardEmpty(board);
@@ -339,13 +341,13 @@ function takeSnapshot() {
     board: cloneBoard(board),
     piece: freshPiece(current),
     queue: queue.map(freshPiece),
-    score, lines, level, combo, b2bActive, dropInterval, nextPowerupAtLines, pendingPowerup, pendingReward,
+    score, lines, level, combo, maxCombo, b2bActive, dropInterval, nextPowerupAtLines, pendingPowerup, pendingReward,
   };
 }
 
 function restoreSnapshot() {
   const { piece, ...state } = undoSnapshot;
-  ({ board, queue, score, lines, level, combo, b2bActive, dropInterval, nextPowerupAtLines, pendingPowerup, pendingReward } = state);
+  ({ board, queue, score, lines, level, combo, maxCombo, b2bActive, dropInterval, nextPowerupAtLines, pendingPowerup, pendingReward } = state);
   current = piece;
   undoSnapshot = null;
   lockFlash = null;
@@ -610,6 +612,7 @@ function showOverlay(title, subtitle, view) {
   modeMenu.classList.toggle('hidden', view !== 'menu');
   abilityMenuEl.classList.toggle('hidden', view !== 'abilities');
   endActions.classList.toggle('hidden', view !== 'end' && view !== 'win');
+  toggleRecordsPanel(view === 'menu' || view === 'end' || view === 'win');
   overlay.classList.remove('hidden');
 }
 
@@ -617,11 +620,14 @@ function endGame(won = false) {
   gameOver = true;
   cancelAnimationFrame(animId);
   showOverlay(won ? '¡OBJETIVO CUMPLIDO!' : 'GAME OVER', `Puntuación: ${score.toLocaleString()}`, won ? 'win' : 'end');
+  recordGameResult();
 }
 
 function showModeMenu() {
   gameOver = true;
   cancelAnimationFrame(animId);
+  savePendingRecord();
+  highlightedRecordIndex = -1;
   showOverlay('TETRIS', 'Elige modo de juego', 'menu');
 }
 
@@ -634,6 +640,153 @@ function buildModeMenu() {
     modeMenu.appendChild(button);
   }
 }
+
+// ---- Records (localStorage) ----
+
+const RECORDS_KEY = 'tetris.records';
+const BESTS_KEY = 'tetris.bests';
+const LAST_NAME_KEY = 'tetris.lastName';
+const CLEAR_RECORDS_LABEL = 'Borrar récords';
+const CONFIRM_CLEAR_RECORDS_LABEL = '¿Seguro? Pulsa otra vez';
+
+const recordsPanel = document.getElementById('records-panel');
+const recordForm = document.getElementById('record-form');
+const recordNameInput = document.getElementById('record-name');
+const recordsBody = document.getElementById('records-body');
+const recordsEmpty = document.getElementById('records-empty');
+const recordsBests = document.getElementById('records-bests');
+const recordsClearBtn = document.getElementById('records-clear');
+
+let clearRecordsArmed = false;
+
+function readStoredJson(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? null : JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage unavailable or full: the game keeps working without persistence.
+  }
+}
+
+function removeStored(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Nothing to remove if storage is unavailable.
+  }
+}
+
+const loadRecords = () => sanitizeRecords(readStoredJson(RECORDS_KEY));
+const loadBests = () => sanitizeBests(readStoredJson(BESTS_KEY));
+
+function loadLastName() {
+  const stored = readStoredJson(LAST_NAME_KEY);
+  return typeof stored === 'string' ? stored.slice(0, RECORD_NAME_MAX) : '';
+}
+
+function todayIsoDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// Same notation as the COMBO box of the HUD.
+function formatCombo(chain) {
+  return chain >= 2 ? `x${chain}` : '—';
+}
+
+function isTypingInField(e) {
+  return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+}
+
+function disarmClearRecords() {
+  clearRecordsArmed = false;
+  recordsClearBtn.textContent = CLEAR_RECORDS_LABEL;
+  recordsClearBtn.classList.remove('confirm');
+}
+
+function toggleRecordsPanel(visible) {
+  recordsPanel.classList.toggle('hidden', !visible);
+  recordForm.classList.add('hidden');
+  disarmClearRecords();
+  if (visible) renderRecords();
+}
+
+// Called from endGame(): updates the all-time bests and asks for a name if the score makes the top.
+function recordGameResult() {
+  writeStoredJson(BESTS_KEY, updateBests(loadBests(), { lines, maxCombo }));
+  pendingRecordEntry = qualifiesForTop(loadRecords(), score)
+    ? { score, lines, maxCombo, mode: mode.name, date: todayIsoDate() }
+    : null;
+  renderRecords();
+  recordForm.classList.toggle('hidden', !pendingRecordEntry);
+  if (pendingRecordEntry) {
+    recordNameInput.value = loadLastName();
+    recordNameInput.focus();
+    recordNameInput.select();
+  }
+}
+
+// Also called when leaving the end screen, so a qualifying score is never lost unsaved.
+function savePendingRecord() {
+  if (!pendingRecordEntry) return;
+  const name = normalizeRecordName(recordNameInput.value);
+  const { records, index } = insertRecord(loadRecords(), { name, ...pendingRecordEntry });
+  writeStoredJson(RECORDS_KEY, records);
+  if (recordNameInput.value.trim()) writeStoredJson(LAST_NAME_KEY, name);
+  pendingRecordEntry = null;
+  highlightedRecordIndex = index;
+  recordNameInput.blur();
+  recordForm.classList.add('hidden');
+  renderRecords();
+}
+
+function renderRecords() {
+  const records = loadRecords();
+  recordsBody.replaceChildren(...records.map((record, i) => {
+    const row = document.createElement('tr');
+    row.title = record.date;
+    row.classList.toggle('highlight', i === highlightedRecordIndex);
+    const cells = [i + 1, record.name, record.score.toLocaleString(), record.lines, formatCombo(record.maxCombo), record.mode];
+    for (const value of cells) {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.appendChild(cell);
+    }
+    return row;
+  }));
+  recordsEmpty.classList.toggle('hidden', records.length > 0);
+  const bests = loadBests();
+  recordsBests.textContent = `Mejor combo: ${formatCombo(bests.maxCombo)} · Líneas máx.: ${bests.lines}`;
+}
+
+function handleClearRecordsClick() {
+  if (!clearRecordsArmed) {
+    clearRecordsArmed = true;
+    recordsClearBtn.textContent = CONFIRM_CLEAR_RECORDS_LABEL;
+    recordsClearBtn.classList.add('confirm');
+    return;
+  }
+  removeStored(RECORDS_KEY);
+  removeStored(BESTS_KEY);
+  highlightedRecordIndex = -1;
+  disarmClearRecords();
+  recordsClearBtn.blur();
+  renderRecords();
+}
+
+recordForm.addEventListener('submit', e => {
+  e.preventDefault();
+  savePendingRecord();
+});
+recordsClearBtn.addEventListener('click', handleClearRecordsClick);
 
 function riseGarbage() {
   const overflow = pushGarbageRow(board, Math.floor(Math.random() * COLS));
@@ -731,6 +884,9 @@ function init(modeId = mode ? mode.id : 'classic') {
   slowRemaining = 0;
   undoSnapshot = null;
   hold = createHoldState();
+  savePendingRecord();
+  maxCombo = 0;
+  highlightedRecordIndex = -1;
   lastTime = performance.now();
   queue = [];
   refillQueue();
@@ -744,6 +900,7 @@ function init(modeId = mode ? mode.id : 'classic') {
 }
 
 document.addEventListener('keydown', e => {
+  if (isTypingInField(e)) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (e.code === 'KeyM') { toggleSound(); return; }
   if (abilityMenu) { handleAbilityMenuKey(e); return; }
