@@ -264,3 +264,71 @@ function resetHoldForNewPiece(hold) {
 function grantExtraHold(hold) {
   hold.usesLeft++;
 }
+
+// ---- Records ----
+
+const RECORDS_LIMIT = 5;
+const RECORD_NAME_MAX = 12;
+const RECORD_DEFAULT_NAME = 'Anónimo';
+
+function isNonNegativeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function normalizeRecordName(name) {
+  const trimmed = typeof name === 'string' ? name.trim().slice(0, RECORD_NAME_MAX) : '';
+  return trimmed || RECORD_DEFAULT_NAME;
+}
+
+function isValidRecord(entry) {
+  return entry !== null && typeof entry === 'object'
+    && typeof entry.name === 'string'
+    && isNonNegativeNumber(entry.score)
+    && isNonNegativeNumber(entry.lines)
+    && isNonNegativeNumber(entry.maxCombo)
+    && typeof entry.mode === 'string'
+    && typeof entry.date === 'string';
+}
+
+// Keeps only well-formed entries (e.g. read from localStorage), sorted by score, at most `limit`.
+function sanitizeRecords(raw, limit = RECORDS_LIMIT) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(isValidRecord)
+    .map(({ name, score, lines, maxCombo, mode, date }) =>
+      ({ name: normalizeRecordName(name), score, lines, maxCombo, mode, date }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+// `records` must be sorted by score (highest first), as sanitizeRecords and insertRecord leave it.
+function qualifiesForTop(records, score, limit = RECORDS_LIMIT) {
+  if (!(score > 0)) return false;
+  return records.length < limit || score > records[limit - 1].score;
+}
+
+// Returns a new list with `entry` in place and its index (-1 if it did not make the top).
+// On ties the older record keeps the higher position.
+function insertRecord(records, entry, limit = RECORDS_LIMIT) {
+  let index = records.findIndex(record => entry.score > record.score);
+  if (index === -1) index = records.length;
+  if (index >= limit) return { records: records.slice(0, limit), index: -1 };
+  const updated = [...records.slice(0, index), entry, ...records.slice(index)].slice(0, limit);
+  return { records: updated, index };
+}
+
+function sanitizeBests(raw) {
+  const source = raw !== null && typeof raw === 'object' ? raw : {};
+  return {
+    lines: isNonNegativeNumber(source.lines) ? source.lines : 0,
+    maxCombo: isNonNegativeNumber(source.maxCombo) ? source.maxCombo : 0,
+  };
+}
+
+function updateBests(bests, { lines, maxCombo }) {
+  const previous = sanitizeBests(bests);
+  return {
+    lines: Math.max(previous.lines, lines),
+    maxCombo: Math.max(previous.maxCombo, maxCombo),
+  };
+}

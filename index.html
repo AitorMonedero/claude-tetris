@@ -94,6 +94,27 @@
           <button id="restart-btn">Reintentar</button>
           <button id="menu-btn" class="secondary">Cambiar modo</button>
         </div>
+        <div id="records-panel" class="records-panel hidden">
+          <form id="record-form" class="record-form hidden" autocomplete="off">
+            <label for="record-name">¡Nuevo récord! Tu nombre:</label>
+            <div class="record-form-row">
+              <input id="record-name" type="text" maxlength="12" spellcheck="false" />
+              <button id="record-save" type="submit">Guardar</button>
+            </div>
+          </form>
+          <span class="records-title">RÉCORDS</span>
+          <table class="records-table">
+            <thead>
+              <tr><th>#</th><th>Nombre</th><th>Puntos</th><th>Lín.</th><th>Combo</th><th>Modo</th></tr>
+            </thead>
+            <tbody id="records-body"></tbody>
+          </table>
+          <p id="records-empty" class="records-empty">Aún no hay récords.</p>
+          <div class="records-footer">
+            <span id="records-bests"></span>
+            <button id="records-clear" type="button">Borrar récords</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
