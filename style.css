@@ -77,6 +77,24 @@ body {
   box-shadow: 0 0 40px var(--shadow);
 }
 
+/* Earthquake event in chaos mode */
+#board.shake {
+  animation: board-shake 0.6s ease-in-out;
+}
+
+@keyframes board-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-8px, 3px) rotate(-1deg); }
+  30% { transform: translate(7px, -4px) rotate(1deg); }
+  45% { transform: translate(-6px, 2px); }
+  60% { transform: translate(5px, -2px) rotate(0.5deg); }
+  80% { transform: translate(-3px, 1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #board.shake { animation: none; }
+}
+
 /* ---- Panel lateral ---- */
 .panel {
   width: 180px;
